@@ -1,65 +1,256 @@
-# MusicGen Fine-Tuning on Google Colab
+# MusicGen-Large LoRA ファインチューニング
 
-このリポジトリは、Google Colab上でMeta社の**MusicGen-Large**モデルをファインチューニングするためのノートブックを提供します。
-独自のデータセット（音声ファイル + テキスト記述）を使用して、特定のジャンルやスタイルの音楽を生成できるモデルを作成することを目的としています。
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/charge0315/colab-musicgen-finetuning/blob/main/musicgen-lora-finetune.ipynb)
 
-## 特徴
+Meta（Facebook）のMusicGen-Largeモデルを独自データセットでLoRAファインチューニングするためのGoogle Colabノートブックです。A100 GPU 1台での学習を想定し、WandBによる詳細なロギング、自動チェックポイント、学習再開機能を備えています。
 
-*   **MusicGen-Large対応**: 高品質な生成が可能なLargeモデルの学習設定済み。
-*   **Google Drive連携**: データセットの読み込みと学習済みモデルの保存をGoogle Driveで行います。
-*   **データセット処理**: JSONL形式のメタデータと音声ファイルを自動的に処理し、学習用・検証用に分割します。
-*   **生成デモ機能**: 学習前のベースモデルと、学習後のファインチューニングモデルの両方で生成テストが可能です。
+---
 
-## 前提条件
+## 🎯 特徴
 
-*   **Googleアカウント**: Google ColabおよびGoogle Driveを使用するために必要です。
-*   **Google Colab Pro/Pro+ (推奨)**: MusicGen-Largeの学習には**A100 GPU**の使用が強く推奨されます。V100でも動作する可能性がありますが、メモリ不足に注意が必要です。
-*   **データセット**: 以下の形式でGoogle Driveに保存されている必要があります。
+- **LoRA（Low-Rank Adaptation）** による効率的なファインチューニング
+- **WandB統合** でリアルタイムのメトリクス追跡
+- **自動チェックポイント** による学習の安全性
+- **Google Drive統合** で全てのモデルを自動保存
+- **段階的な処理** でトークナイズ速度を事前計測
+- **少数サンプルテスト** で本番前に動作確認
+- **完全な学習再開機能** で中断からの復帰が可能
 
-## データセットの構成
+---
 
-Google Driveの `My Drive` 直下に `MusicGen_Dataset` フォルダを作成し、以下の構造で配置してください。
+## 📋 事前準備
+
+### 1. Google Colab環境
+
+- **GPU**: A100 (80GB) を強く推奨（V100でも動作可能だが要調整）
+- **ランタイムタイプ**: GPU を選択
+
+### 2. シークレットの設定
+
+Colabの「🔑シークレット」メニューから以下を設定：
+
+- `WANDB_API_KEY`: [WandB](https://wandb.ai/settings)のAPIキー
+- `HF_TOKEN`: [Hugging Face](https://huggingface.co/settings/tokens)のトークン
+
+### 3. データセットの準備
+
+Google Driveに以下のいずれかの形式でデータを配置：
+
+#### オプション1: tar.gz形式
+
+```bash
+/content/drive/MyDrive/music_dataset.tar.gz
+
+
+#### オプション2: 展開済みディレクトリ
 
 ```text
-My Drive/
-└── MusicGen_Dataset/
-    ├── audio/                  # 音声ファイル (.wav) を格納するフォルダ
-    │   ├── track1_segment01.wav
-    │   ├── track1_segment02.wav
-    │   └── ...
-    └── metadata.jsonl          # メタデータファイル
+/content/drive/MyDrive/music_dataset/
+├── wav_chunks/          # 音声ファイル（.wav）
+└── metadata.jsonl       # メタデータ（オプション）
 ```
 
-### metadata.jsonl の形式
-
-各行が1つの音声データに対応するJSONオブジェクトです。
+**metadata.jsonl の形式** (オプション):
 
 ```json
-{"path": "audio/track1_segment01.wav", "duration": 30.0, "sample_rate": 32000, "amplitude": 0.15, "description": "A classic rock guitar riff with distortion, upbeat tempo"}
-{"path": "audio/track1_segment02.wav", "duration": 30.0, "sample_rate": 32000, "amplitude": 0.14, "description": "Electric guitar solo, fast picking, minor key"}
+{"path": "audio/track1.wav", "duration": 30.0, "sample_rate": 32000, "description": "説明文"}
+{"path": "audio/track2.wav", "duration": 30.0, "sample_rate": 32000, "description": "説明文"}
 ```
 
-*   `path`: `metadata.jsonl` からの相対パス。
-*   `description`: 楽曲のテキスト記述（プロンプト）。
+---
 
-## 使い方
+## 🚀 使い方
 
-1.  このリポジトリの `MusicGen_FineTuning.ipynb` をGoogle Colabで開きます（GitHubから直接開くか、ダウンロードしてアップロードしてください）。
-2.  Colabのメニューから「ランタイム」→「ランタイムのタイプを変更」を選択し、ハードウェアアクセラレータを **GPU** (A100推奨) に設定します。
-3.  ノートブックのセルを上から順に実行します。
-    *   環境構築
-    *   Google Driveのマウント（認証が必要です）
-    *   データセットの準備
-    *   学習設定の作成
-    *   学習の実行 (`dora run`)
-    *   生成・推論
+### ステップ1: ノートブックを開く
 
-## 生成されるモデルについて
+上部の「Open in Colab」バッジをクリックしてノートブックを開きます。
 
-*   学習中のチェックポイントは Google Drive の `My Drive/MusicGen_Checkpoints/` に保存されます。
-*   学習完了後、推論セクションで保存されたモデルをロードして楽曲生成を行えます。
+### ステップ2: シークレットを設定
 
-## ライセンス
+Colabの左サイドバーから「🔑」アイコンをクリックし、`WANDB_API_KEY`と`HF_TOKEN`を追加します。
 
-このプロジェクトのコードはMITライセンスの下で公開されています。
-MusicGenモデル自体のライセンスについては、[Metaの公式リポジトリ](https://github.com/facebookresearch/audiocraft)をご確認ください。
+### ステップ3: セルを順番に実行
+
+1. **依存関係のインストール** - 必要なライブラリをインストール
+2. **Google Driveマウント** - データセットにアクセス
+3. **認証設定** - WandBとHugging Faceにログイン
+4. **テスト実行（推奨）** - 5サンプルで動作確認
+5. **トークナイズ速度計測** - 処理時間を推定
+6. **全データのトークナイズ** - EnCodecでエンコード
+7. **モデル準備** - LoRA適用とデータローダ作成
+8. **学習実行** - メイン学習ループ
+9. **楽曲生成** - 学習済みモデルで生成
+
+---
+
+## 💾 保存構造
+
+学習中、全てのモデルとチェックポイントがGoogle Driveに自動保存されます：
+
+```text
+/content/drive/MyDrive/MusicGen_Checkpoints/
+│
+├── full_models/                    # 完全なモデル（モデル + LoRA）
+│   ├── best_model.pt              # 最良の損失を記録したモデル
+│   ├── final_model.pt             # 学習完了時の最終モデル
+│   └── checkpoint_epoch_*.pt      # 各エポック終了時のスナップショット
+│
+├── lora_weights/                   # LoRA重みのみ（軽量版）
+│   ├── best_lora.pt               # ベストモデルのLoRA重み
+│   ├── final_lora.pt              # 最終モデルのLoRA重み
+│   ├── latest_lora.pt             # 最新のLoRA重み
+│   └── lora_epoch_*.pt            # 各エポックのLoRA重み
+│
+└── latest.pt                       # 最新チェックポイント（再開用）
+```
+
+### 保存されるファイル
+
+| ファイル | 説明 | サイズ目安 |
+|---------|------|-----------|
+| `best_model.pt` | 最良損失のモデル | 数GB |
+| `final_model.pt` | 最終モデル | 数GB |
+| `*_lora.pt` | LoRA重みのみ | 数十MB |
+| `checkpoint_step_*.pt` | 500ステップごとの中間保存 | 数GB |
+
+**注意**: LoRA重みのみのファイル（`*_lora.pt`）は容量が小さく、ダウンロードや共有に便利です。
+
+---
+
+## 📊 WandBでのモニタリング
+
+学習中、以下のメトリクスがWandBで自動的にトラッキングされます：
+
+### トークナイズ段階
+
+- 処理速度（ファイル/秒）
+- 推定残り時間
+- 成功/失敗数
+
+### 学習段階
+
+- 訓練損失（ステップごと・エポックごと）
+- 学習率
+- エポック処理時間
+- ベストモデルの更新履歴
+
+### アーティファクト
+
+- ベストモデルのLoRA重み
+- 最終モデルのLoRA重み
+
+WandBダッシュボード: https://wandb.ai/
+
+---
+
+## 🔄 学習の再開
+
+ノートブックは自動的にチェックポイントから再開します：
+
+1. `latest.pt` が存在する場合、自動的にロードされます
+2. エポック、ステップ、オプティマイザの状態が復元されます
+3. ベストモデルの情報も引き継がれます
+
+手動で特定のチェックポイントから再開する場合は、学習セルで以下を変更：
+
+```python
+latest_ckpt = '/content/drive/MyDrive/MusicGen_Checkpoints/full_models/checkpoint_epoch_3.pt'
+```
+
+---
+
+## ⚙️ 推奨ハイパーパラメータ
+
+### 初期設定（A100 80GB）
+
+```python
+lora_r = 8                        # LoRAランク（16まで増やせる）
+lora_alpha = 32                   # LoRAアルファ
+learning_rate = 1e-4              # 学習率
+batch_size = 2                    # バッチサイズ
+gradient_accumulation_steps = 8   # 勾配累積（実効バッチ=16）
+num_epochs = 5                    # エポック数
+```
+
+### GPU別の推奨設定
+
+| GPU | batch_size | grad_accum | 実効バッチ |
+|-----|-----------|-----------|----------|
+| A100 (80GB) | 4 | 4 | 16 |
+| V100 (32GB) | 2 | 8 | 16 |
+| T4 (16GB) | 1 | 16 | 16 |
+
+---
+
+## 🎵 楽曲生成
+
+学習後、最終セルで楽曲を生成できます：
+
+```python
+descriptions = [
+    "A dynamic heavy metal song with fast drums and guitar solo",
+    "Relaxing jazz piano with soft background ambience",
+    "Upbeat electronic dance music with strong bass",
+]
+```
+
+生成された楽曲は以下に保存されます：
+
+- ローカル: `/content/generated_music/`
+- Google Drive: `/content/drive/MyDrive/MusicGen_Generated/`
+
+---
+
+## 🛠️ トラブルシューティング
+
+### Out of Memory (OOM) エラー
+
+- `batch_size` を 1 に減らす
+- `gradient_accumulation_steps` を増やす
+- GPU メモリをクリア: `torch.cuda.empty_cache()`
+
+### チェックポイントが見つからない
+
+- Google Driveが正しくマウントされているか確認
+- パスが正しいか確認: `/content/drive/MyDrive/MusicGen_Checkpoints/`
+
+### トークナイズが遅い
+
+- 最初の100ファイルで推定時間を確認
+- 必要に応じてサンプル数を減らしてテスト
+
+### WandBログインエラー
+
+- シークレットに`WANDB_API_KEY`が設定されているか確認
+- APIキーが有効か確認: https://wandb.ai/settings
+
+---
+
+## 📝 ベストプラクティス
+
+1. **テストを必ず実行** - 本番前に5-10サンプルで動作確認
+2. **小規模から開始** - 最初は500-1000サンプルで試す
+3. **定期的にバックアップ** - 重要なチェックポイントをローカルに保存
+4. **WandBで監視** - 損失が正常に減少しているか確認
+5. **LoRA重みを活用** - 軽量な`*_lora.pt`ファイルを共有用に使用
+
+---
+
+## 📚 参考資料
+
+- [MusicGen公式リポジトリ](https://github.com/facebookresearch/audiocraft)
+- [LoRA論文](https://arxiv.org/abs/2106.09685)
+- [WandBドキュメント](https://docs.wandb.ai/)
+- [Google Colab FAQ](https://research.google.com/colaboratory/faq.html)
+
+---
+
+## 🤝 貢献
+
+Issues や Pull Requests を歓迎します！
+
+---
+
+## 📄 ライセンス
+
+このプロジェクトはMITライセンスの下で公開されています。

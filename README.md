@@ -36,21 +36,17 @@ Colabの「🔑シークレット」メニューから以下を設定：
 
 Google Driveに以下のいずれかの形式でデータを配置：
 
-#### オプション1: tar.gz形式
 
-```bash
-/content/drive/MyDrive/music_dataset.tar.gz
-
-
-#### オプション2: 展開済みディレクトリ
+#### ZIPファイル
 
 ```text
-/content/drive/MyDrive/music_dataset/
-├── wav_chunks/          # 音声ファイル（.wav）
+/content/drive/MyDrive/Archive_wav
+├── archive_batch_xxxx.zip  # ZIPファイル（複数可）
 └── metadata.jsonl       # メタデータ（オプション）
+ZIPファイルは001～139まで存在し、１つのZIPに約1000ファイルが含まれます。
 ```
 
-**metadata.jsonl の形式** (オプション):
+**metadata.jsonl の形式** :
 
 ```json
 {"path": "audio/track1.wav", "duration": 30.0, "sample_rate": 32000, "description": "説明文"}
@@ -80,6 +76,23 @@ Colabの左サイドバーから「🔑」アイコンをクリックし、`WAND
 7. **モデル準備** - LoRA適用とデータローダ作成
 8. **学習実行** - メイン学習ループ
 9. **楽曲生成** - 学習済みモデルで生成
+
+---
+
+## 順次処理戦略 (Sequential Processing Strategy)
+
+Google Colabのディスク容量制限（特に無料枠や標準インスタンスの場合）を回避するため、以下のループ処理を採用して効率的にデータセットを処理します。
+
+1. **抽出 (Extract)**:
+    ZIPバッチ（例: `archive_batch_xxxx.zip`）を1つずつ `DATA_DIR` に展開します。
+
+2. **トークン化 (Tokenize)**:
+    展開された `DATA_DIR` 内のすべてのWAVファイルを EnCodec モデルで処理し、結果のテンソルを `TOKEN_DIR` に保存します。
+
+3. **クリーンアップ (Cleanup)**:
+    処理が完了したWAVファイルを即座に削除し、ディスク領域を解放します。
+
+このサイクルを全てのバッチに対して繰り返すことで、一時的なディスク使用量を最小限に抑えつつ、大規模なデータセット全体のトークン化を完了させることができます。
 
 ---
 
